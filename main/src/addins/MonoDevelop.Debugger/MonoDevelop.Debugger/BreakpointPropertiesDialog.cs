@@ -26,7 +26,6 @@
 //
 
 using System;
-using System.Collections.Generic;
 
 using MonoDevelop.Core;
 using Mono.Debugging.Client;
@@ -39,8 +38,8 @@ namespace MonoDevelop.Debugger
 	{
 		string[] parsedParamTypes;
 		string parsedFunction;
-		Breakpoint bp;
-		bool isNew;
+		readonly Breakpoint bp;
+		readonly bool isNew;
 		
 		public BreakpointPropertiesDialog (Breakpoint bp, bool isNew)
 		{
@@ -55,7 +54,7 @@ namespace MonoDevelop.Debugger
 			spinLine.Adjustment.Lower = 1;
 			
 			if (bp is FunctionBreakpoint) {
-				FunctionBreakpoint fb = (FunctionBreakpoint) bp;
+				var fb = (FunctionBreakpoint) bp;
 				
 				labelFileFunction.LabelProp = GettextCatalog.GetString ("Function:");
 				
@@ -78,7 +77,7 @@ namespace MonoDevelop.Debugger
 				tableLocation.NRows--;
 			} else {
 				labelFileFunction.LabelProp = GettextCatalog.GetString ("File:");
-				entryFileFunction.Text = ((Breakpoint) bp).FileName;
+				entryFileFunction.Text = bp.FileName;
 				
 				// We don't use ".Sensitive = false" because we want the user to be able to select & copy the text.
 				entryFileFunction.ModifyBase (Gtk.StateType.Normal, Style.Backgrounds [(int)Gtk.StateType.Insensitive]);
@@ -207,7 +206,7 @@ namespace MonoDevelop.Debugger
 		{
 			if (isNew) {
 				if (bp is FunctionBreakpoint) {
-					FunctionBreakpoint fb = (FunctionBreakpoint) bp;
+					var fb = (FunctionBreakpoint) bp;
 					
 					fb.FunctionName = parsedFunction;
 					fb.ParamTypes = parsedParamTypes;
