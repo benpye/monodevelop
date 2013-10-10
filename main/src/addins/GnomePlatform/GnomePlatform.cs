@@ -55,7 +55,7 @@ namespace MonoDevelop.Platform
 			//apparently Gnome.Icon needs GnomeVFS initialized even when we're using GIO.
 			Gnome.Vfs.Vfs.Initialize ();
 		}
-		
+
 		DesktopApplication GetGnomeVfsDefaultApplication (string mimeType)
 		{
 			var app = Gnome.Vfs.Mime.GetDefaultApplication (mimeType);
@@ -64,7 +64,7 @@ namespace MonoDevelop.Platform
 			else
 				return null;
 		}
-		
+
 		IEnumerable<DesktopApplication> GetGnomeVfsApplications (string mimeType)
 		{
 			var def = GetGnomeVfsDefaultApplication (mimeType);
@@ -79,7 +79,7 @@ namespace MonoDevelop.Platform
 			}
 			return list;
 		}
-		
+
 		public override IEnumerable<DesktopApplication> GetApplications (string filename)
 		{
 			var mimeType = GetMimeTypeForUri (filename);
@@ -93,7 +93,7 @@ namespace MonoDevelop.Platform
 			else
 				return GetGnomeVfsApplications (mimeType);
 		}
-		
+
 		struct GnomeVfsApp {
 			public string Id, DisplayName, Command;
 		}
@@ -110,7 +110,7 @@ namespace MonoDevelop.Platform
 		{
 			if (uri == null)
 				return null;
-			
+
 			if (useGio) {
 				string mt = Gio.GetMimeTypeForUri (uri);
 				if (mt != null)
@@ -118,7 +118,7 @@ namespace MonoDevelop.Platform
 			}
 			return Gnome.Vfs.MimeType.GetMimeTypeForUri (ConvertFileNameToVFS (uri));
 		}
-		
+
 		protected override bool OnGetMimeTypeIsText (string mimeType)
 		{
 			// If gedit can open the file, this editor also can do it
@@ -133,7 +133,7 @@ namespace MonoDevelop.Platform
 		{
 			Gnome.Url.Show (url);
 		}
-		
+
 		public override string DefaultMonospaceFont {
 			get {
 				try {
@@ -143,7 +143,7 @@ namespace MonoDevelop.Platform
 				}
 			}
 		}
-		
+
 		public override string Name {
 			get { return "Gnome"; }
 		}
@@ -159,7 +159,7 @@ namespace MonoDevelop.Platform
 				filename = EscapeFileName (filename);
 				if (filename == null)
 					return "gnome-fs-regular";
-				
+
 				string icon = null;
 				Gnome.IconLookupResultFlags result;
 				try {
@@ -170,15 +170,15 @@ namespace MonoDevelop.Platform
 					return icon;
 			}			
 			return "gnome-fs-regular";
-			
+
 		}
-		
+
 		protected override Gdk.Pixbuf OnGetPixbufForFile (string filename, Gtk.IconSize size)
 		{
 			string icon = OnGetIconForFile (filename);
 			return GetPixbufForType (icon, size);
 		}
-		
+
 		string EscapeFileName (string filename)
 		{
 			foreach (char c in filename) {
@@ -189,7 +189,7 @@ namespace MonoDevelop.Platform
 			}
 			return ConvertFileNameToVFS (filename);
 		}
-		
+
 		static string ConvertFileNameToVFS (string fileName)
 		{
 			string result = fileName;
@@ -198,157 +198,84 @@ namespace MonoDevelop.Platform
 			result = result.Replace ("?", "%3F");
 			return result;
 		}
-		
-		
-		delegate string TerminalRunnerHandler (string command, string args, string dir, string title, bool pause);
-		delegate string TerminalOpenFolderRunnerHandler (string dir);
 
 		string terminal_command;
-		bool terminal_probed;
-		TerminalRunnerHandler runner;
-		TerminalOpenFolderRunnerHandler openDirectoryRunner;
-		
+		string terminal_run_command;
+		string terminal_folder_command;
+
 		public override IProcessAsyncOperation StartConsoleProcess (string command, string arguments, string workingDirectory,
 		                                                            IDictionary<string, string> environmentVariables, 
 		                                                            string title, bool pauseWhenFinished)
 		{
 			ProbeTerminal ();
-			
-			string exec = runner (command, arguments, workingDirectory, title, pauseWhenFinished);
+
+			string exec = ConsoleCommand (command, arguments, workingDirectory, title, pauseWhenFinished);
 			var psi = new ProcessStartInfo (terminal_command, exec) {
 				CreateNoWindow = true,
 				UseShellExecute = false,
 			};
 			foreach (var env in environmentVariables)
 				psi.EnvironmentVariables [env.Key] = env.Value;
-			
+
 			ProcessWrapper proc = new ProcessWrapper ();
 			proc.StartInfo = psi;
 			proc.Start ();
 			return proc;
 		}
-		
-#region Terminal runner implementations
-		
-		private static string GnomeTerminalRunner (string command, string args, string dir, string title, bool pause)
-		{
-			string extra_commands = pause 
-				? BashPause.Replace ("'", "\\\"")
-				: String.Empty;
-			
-			return String.Format (@" --disable-factory --title ""{4}"" -e ""bash -c 'cd {3} ; {0} {1} ; {2}'""",
-				command,
-				EscapeArgs (args),
-				extra_commands,
-				EscapeDir (dir),
-				title);
-		}
-		
-		private static string XtermRunner (string command, string args, string dir, string title, bool pause)
-		{
-			string extra_commands = pause 
-				? BashPause
-				: String.Empty;
-			
-			return String.Format (@" -title ""{4}"" -e bash -c ""cd {3} ; '{0}' {1} ; {2}""",
-				command,
-				EscapeArgs (args),
-				extra_commands,
-				EscapeDir (dir),
-				title);
-		}
 
-		private static string KdeTerminalRunner (string command, string args, string dir, string title, bool pause)
+		#region Terminal runner implementations
+
+		private string ConsoleCommand (string command, string args, string dir, string title, bool pause)
 		{
 			string extra_commands = pause 
 				? BashPause.Replace ("'", "\"")
-					: String.Empty;
+				: String.Empty;
 
-			return String.Format (@" --nofork --caption ""{4}"" --workdir=""{3}"" -e ""bash"" -c '{0} {1} ; {2}'",
-			                      command,
-			                      args,
-			                      extra_commands,
-			                      EscapeDir (dir),
-			                      title);
+			return StringParserService.Parse (terminal_run_command,
+			                                  new Dictionary<string, string> () {
+				{"command", command},
+				{"args", EscapeArgs (args)},
+				{"extracommands", extra_commands},
+				{"directory", EscapeDir (dir)},
+				{"title", title}
+			});
 		}
 
-		private static string GnomeTerminalOpenFolderRunner (string dir) {
-			return string.Format(@" --working-directory=""{0}""", EscapeDir(dir));
-		}
-
-		private static string XtermOpenFolderRunner (string dir) {
-			return string.Format(@" -e bash -c ""cd {0}""", EscapeDir(dir));
-		}
-
-		private static string KdeTerminalOpenFolderRunner (string dir) {
-			return string.Format(@" --nofork --workdir=""{0}""", EscapeDir(dir));
+		private string OpenFolderCommand (string dir)
+		{
+			return StringParserService.Parse (terminal_folder_command,
+			                                  new Dictionary<string, string> () {
+				{"directory", EscapeDir (dir)}
+			});
 		}
 
 		private static string EscapeArgs (string args)
 		{
 			return args.Replace ("\\", "\\\\").Replace ("\"", "\\\"");
 		}
-		
+
 		private static string EscapeDir (string dir)
 		{
 			return dir.Replace (" ", "\\ ").Replace (";", "\\;");
 		}
-		
+
 		private static string BashPause {
 			get { return @"echo; read -p 'Press any key to continue...' -n1;"; }
 		}
 
-#endregion
+		#endregion
 
-#region Probing for preferred terminal
+		#region Probing for preferred terminal
 
 		private void ProbeTerminal ()
 		{
-			if (terminal_probed) {
-				return;
-			}
-			
-			terminal_probed = true;
-			
-			string fallback_terminal = PropertyService.Get ("MonoDevelop.Shell", "xterm");
-			string preferred_terminal;
-			TerminalRunnerHandler preferred_runner = null;
-			TerminalRunnerHandler fallback_runner = XtermRunner;
+			terminal_command = PropertyService.Get ("MonoDevelop.Shell", "xterm");
+			terminal_run_command = PropertyService.Get ("MonoDevelop.ShellArgs",
+			                                            @" -title ""${title}"" -e bash -c ""cd ${directory} ; '${command}' ${args} ; ${extracommands}""");
+			terminal_folder_command = PropertyService.Get ("MonoDevelop.ShellFolderArgs",
+			                                               @" -e bash -c ""cd ${directory}""");
 
-			TerminalOpenFolderRunnerHandler preferedOpenFolderRunner = null;
-			TerminalOpenFolderRunnerHandler fallbackOpenFolderRunner = XtermOpenFolderRunner;
-
-			if (!String.IsNullOrEmpty (Environment.GetEnvironmentVariable ("GNOME_DESKTOP_SESSION_ID"))) {
-				preferred_terminal = "gnome-terminal";
-				preferred_runner = GnomeTerminalRunner;
-				preferedOpenFolderRunner = GnomeTerminalOpenFolderRunner;
-			}
-			else if (!String.IsNullOrEmpty (Environment.GetEnvironmentVariable ("MATE_DESKTOP_SESSION_ID"))) {
-				preferred_terminal = "mate-terminal";
-				preferred_runner = GnomeTerminalRunner;
-				preferedOpenFolderRunner = GnomeTerminalOpenFolderRunner;
-			} 
-			else if (!String.IsNullOrEmpty (Environment.GetEnvironmentVariable ("KDE_SESSION_VERSION"))) { 
-				preferred_terminal = "konsole";
-				preferred_runner = KdeTerminalRunner;
-				preferedOpenFolderRunner = KdeTerminalOpenFolderRunner;
-			}
-			else {
-				preferred_terminal = fallback_terminal;
-				preferred_runner = fallback_runner;
-				preferedOpenFolderRunner = fallbackOpenFolderRunner;
-			}
-
-			terminal_command = FindExec (preferred_terminal);
-			if (terminal_command != null) {
-				runner = preferred_runner;
-				openDirectoryRunner = preferedOpenFolderRunner;
-				return;
-			}
-			
-			terminal_command = FindExec (fallback_terminal);
-			runner = fallback_runner;
-			openDirectoryRunner = fallbackOpenFolderRunner;
+			terminal_command = FindExec (terminal_command);
 		}
 
 		private string FindExec (string command)
@@ -379,31 +306,31 @@ namespace MonoDevelop.Platform
 			return path.Split (':');
 		}
 
-#endregion
-				
+		#endregion
+
 		public override bool CanOpenTerminal {
 			get {
 				return true;
 			}
 		}
-		
+
 		public override void OpenInTerminal (FilePath directory)
 		{
 			ProbeTerminal ();
-			Runtime.ProcessService.StartProcess (terminal_command, openDirectoryRunner(directory), directory, null);
+			Runtime.ProcessService.StartProcess (terminal_command, OpenFolderCommand (directory), directory, null);
 		}
 	}
-	
+
 	class GnomeDesktopApplication : DesktopApplication
 	{
 		public GnomeDesktopApplication (string command, string displayName, bool isDefault) : base (command, displayName, isDefault)
 		{
 		}
-		
+
 		string Command {
 			get { return Id; }
 		}
-		
+
 		public override void Launch (params string[] files)
 		{
 			// TODO: implement all other cases
